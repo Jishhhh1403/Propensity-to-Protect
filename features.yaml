@@ -1,0 +1,905 @@
+version: 1
+name: gru_daily_feature_registry
+description: >
+  Registry of all existing engineered features produced by the GRU daily
+  feature store pipeline. Features are grouped by semantic type such as
+  temporal, behavioral, channel, category, and static profile attributes.
+
+entity:
+  name: customer
+  primary_key: customer_id
+
+metadata:
+  grain: daily
+  sequence_length: 30
+  label: existing_features
+
+features:
+  temporal:
+    - name: date
+      source_column: date
+      status: existing
+      data_type: timestamp
+      description: Calendar date for the daily aggregation.
+      depends_on: [transactions.transaction_date]
+
+    - name: day_of_week
+      source_column: day_of_week
+      status: existing
+      data_type: int
+      description: Day of week index for the transaction date (0-6 or 1-7).
+      depends_on: [transactions.transaction_date]
+
+    - name: is_weekend
+      source_column: is_weekend
+      status: existing
+      data_type: float32
+      description: Weekend indicator for the date (1 = weekend, 0 = weekday).
+
+    - name: day_index
+      source_column: day_index
+      status: existing
+      data_type: int16
+      description: Position of the day within the 30‑day GRU sequence window.
+
+    - name: day_sin
+      source_column: day_sin
+      status: existing
+      data_type: float32
+      description: Cyclical encoding of day within month using sine transform.
+
+    - name: day_cos
+      source_column: day_cos
+      status: existing
+      data_type: float32
+      description: Cyclical encoding of day within month using cosine transform.
+
+    - name: prediction_month
+      source_column: prediction_month
+      status: existing
+      data_type: string
+      description: Year‑month partition used for feature store partitioning.
+
+  behavioral:
+    - name: daily_income
+      source_column: daily_income
+      status: existing
+      data_type: float32
+      description: Total inflow (credits) for the customer on that day.
+
+    - name: daily_spend
+      source_column: daily_spend
+      status: existing
+      data_type: float32
+      description: Total outflow (debits) for the customer on that day.
+
+    - name: tx_count
+      source_column: tx_count
+      status: existing
+      data_type: int
+      description: Number of transactions on that day.
+
+    - name: net_flow
+      source_column: net_flow
+      status: existing
+      data_type: float32
+      description: Net cashflow for the day (daily_income - daily_spend).
+
+    - name: daily_balance
+      source_column: daily_balance
+      status: existing
+      data_type: float32
+      description: Running cumulative balance over time per customer.
+
+    - name: rel_spend
+      source_column: rel_spend
+      status: existing
+      data_type: float32
+      description: Daily spend relative to the customer’s average spend level.
+
+    - name: bal_trajectory
+      source_column: bal_trajectory
+      status: existing
+      data_type: float32
+      description: 7‑day average change in cumulative balance, capturing trend.
+
+    - name: velocity_ratio
+      source_column: velocity_ratio
+      status: existing
+      data_type: float32
+      description: Ratio of current day transaction count to 7‑day rolling mean.
+
+    - name: spend_z_score
+      source_column: spend_z_score
+      status: existing
+      data_type: float32
+      description: Z‑score of daily spend vs the customer’s historical spend.
+
+  channel:
+    - name: channel_digital_pct
+      source_column: channel_digital_pct
+      status: existing
+      data_type: float32
+      description: Share of digital transactions (online/mobile) for the day.
+
+  category_flags:
+    - name: cat_flag_health
+      source_column: cat_flag_health
+      status: existing
+      data_type: float32
+      description: Indicator that any health/pharmacy merchant category occurred.
+
+    - name: cat_flag_retail
+      source_column: cat_flag_retail
+      status: existing
+      data_type: float32
+      description: Indicator that any grocery/retail merchant category occurred.
+
+  static_profile:
+    - name: age
+      source_column: age
+      status: existing
+      data_type: float32
+      description: Customer age at reference time.
+
+    - name: income_band
+      source_column: income_band
+      status: existing
+      data_type: string
+      description: Bucketed income band for the customer.
+
+    - name: credit_score
+      source_column: credit_score
+      status: existing
+      data_type: float32
+      description: Credit score or internal risk score for the customer.
+
+    - name: current_income
+      source_column: current_income
+      status: existing
+      data_type: float32
+      description: Estimate of current income level for the customer.
+
+    - name: city
+      source_column: city
+      status: existing
+      data_type: string
+      description: City where the customer resides.
+  category_diversity:
+    - name: activity_entropy
+      status: potential
+      description: >
+        Randomness/diversity of merchant-category activity over a period (higher
+        = more diverse/unpredictable categories).
+
+    - name: category_repeat_ratio
+      status: potential
+      description: >
+        Share of transactions in previously seen merchant categories vs total
+        (higher = more routine).
+
+    - name: spend_pattern_shift
+      status: potential
+      description: >
+        Degree to which spend distribution (by category/day) changes vs the
+        customer’s historical baseline.
+
+  spend_stability_and_discipline:
+    - name: spending_regularization_score
+      status: potential
+      description: >
+        Consistency of daily spend amounts across days (higher = steadier spend
+        levels).
+
+    - name: spend_gap_days
+      status: potential
+      description: >
+        Days between consecutive spend events (higher = more infrequent/lumpy
+        spending).
+
+    - name: bill_payment_consistency
+      status: potential
+      description: >
+        Regularity/consistency of bill or utility payments over time.
+
+  balance_stress_and_recovery:
+    - name: low_balance_recovery_flag
+      status: potential
+      description: >
+        1 if balance recovers after dropping below a threshold; else 0.
+
+    - name: rapid_balance_drop_flag
+      status: potential
+      description: >
+        1 if balance drops sharply vs previous day; else 0.
+
+    - name: positive_balance_streak
+      status: potential
+      description: >
+        Consecutive days the balance stays above zero.
+
+    - name: net_positive_days
+      status: potential
+      description: >
+        Count of days where net cashflow is positive (income > spending).
+
+    - name: balance_stability_flag
+      status: potential
+      description: >
+        1 if balance stays within a stable band over several days; else 0.
+
+  engagement_and_intensity:
+    - name: transaction_intensity_change
+      status: potential
+      description: >
+        Change in transaction frequency vs recent history (spike or drop in
+        activity).
+
+  recurring_commitments:
+    - name: recurring_payment_flag
+      status: potential
+      description: >
+        1 if recurring payments (subscriptions/EMIs/utilities) are detected;
+        else 0.
+
+  income_and_pay_cycle:
+    - name: salary_detected_flag
+      status: potential
+      description: >
+        1 if a salary-like credit is detected on that day; else 0.
+
+    - name: days_since_salary
+      status: potential
+      description: >
+        Number of days since last detected salary event.
+
+    - name: salary_spend_ratio
+      status: potential
+      description: >
+        Fraction of spending concentrated shortly after salary (e.g., within 3
+        days) vs total spending.
+
+
+  advanced_behavioral:
+
+    - name: rolling_7d_avg_spend
+      status: new
+      data_type: float32
+      description: >
+        Average daily spend over the past 7 days.
+      definition: >
+        mean(daily_spend over last 7 days)
+      why_useful: >
+        Captures short-term spending intensity. Helps detect recent financial pressure or lifestyle change before purchase.
+
+    - name: rolling_30d_avg_income
+      status: new
+      data_type: float32
+      description: >
+        Average daily income over the last 30 days.
+      definition: >
+        mean(daily_income over last 30 days)
+      why_useful: >
+        Smooths noisy income signals and reflects earning stability, important for insurance affordability.
+
+    - name: spend_to_income_ratio_30d
+      status: new
+      data_type: float32
+      description: >
+        Ratio of total spending to total income over the last 30 days.
+      definition: >
+        sum(daily_spend last 30d) / sum(daily_income last 30d)
+      why_useful: >
+        Measures financial pressure. High ratio → less capacity, low ratio → higher purchase readiness.
+
+  transaction_patterns:
+
+    - name: weekend_spend_ratio
+      status: new
+      data_type: float32
+      description: >
+        Fraction of total spend occurring on weekends in the last 30 days.
+      definition: >
+        spend_on_weekends / total_spend_last_30d
+      why_useful: >
+        Lifestyle indicator (leisure-heavy vs disciplined spending).
+
+    - name: high_value_tx_ratio
+      status: new
+      data_type: float32
+      description: >
+        Fraction of transactions above a high-value threshold (e.g., top 10%).
+      definition: >
+        count(high_value_tx) / total_tx
+      why_useful: >
+        Captures big financial decisions behavior → strong signal for insurance purchase intent.
+
+    - name: avg_tx_amount
+      status: new
+      data_type: float32
+      description: >
+        Average transaction amount over last 30 days.
+      definition: >
+        total_amount / tx_count
+      why_useful: >
+        Differentiates micro-spenders vs high-ticket users.
+
+  merchant_intelligence:
+
+    - name: essential_spend_ratio
+      status: new
+      data_type: float32
+      description: >
+        Share of spend on essentials (groceries, utilities, healthcare).
+      definition: >
+        essential_spend / total_spend
+      why_useful: >
+        Indicates financial responsibility and stability.
+
+    - name: discretionary_spend_ratio
+      status: new
+      data_type: float32
+      description: >
+        Share of spend on non-essential categories (entertainment, travel).
+      definition: >
+        discretionary_spend / total_spend
+      why_useful: >
+        High discretionary spend → more disposable income → higher likelihood of insurance purchase.
+
+    - name: subscription_spend_ratio
+      status: new
+      data_type: float32
+      description: >
+        Fraction of spend on subscriptions (Netflix, Spotify, etc.).
+      definition: >
+        subscription_spend / total_spend
+      why_useful: >
+        Proxy for recurring commitment behavior → aligns with insurance adoption mindset.
+
+  cashflow_dynamics:
+
+    - name: income_volatility_30d
+      status: new
+      data_type: float32
+      description: >
+        Standard deviation of daily income over last 30 days.
+      definition: >
+        std(daily_income last 30 days)
+      why_useful: >
+        Stable income → higher trustworthiness for long-term products.
+
+    - name: spend_volatility_30d
+      status: new
+      data_type: float32
+      description: >
+        Standard deviation of daily spend over last 30 days.
+      definition: >
+        std(daily_spend last 30 days)
+      why_useful: >
+        Detects erratic behavior vs stable budgeting.
+
+    - name: max_single_day_spend_30d
+      status: new
+      data_type: float32
+      description: >
+        Maximum spend in a single day over last 30 days.
+      definition: >
+        max(daily_spend last 30 days)
+      why_useful: >
+        Identifies major financial events (travel, medical, etc.).
+
+  temporal_behavior:
+
+    - name: days_since_last_transaction
+      status: new
+      data_type: int
+      description: >
+        Number of days since last transaction.
+      definition: >
+        current_date - last_transaction_date
+      why_useful: >
+        Detects inactivity or churn-like behavior.
+
+    - name: transaction_recency_score
+      status: new
+      data_type: float32
+      description: >
+        Exponential decay score based on transaction recency.
+      definition: >
+        exp(-days_since_last_tx / decay_factor)
+      why_useful: >
+        Better signal than raw recency for sequence models like GRU.
+
+  financial_commitment:
+
+    - name: loan_repayment_ratio
+      status: new
+      data_type: float32
+      description: >
+        Fraction of spend going toward loan repayments.
+      definition: >
+        loan_repayment_spend / total_spend
+      why_useful: >
+        Indicates existing financial burden → affects insurance decision.
+
+    - name: mortgage_presence_flag
+      status: new
+      data_type: float32
+      description: >
+        1 if mortgage repayment transactions exist in last 30 days.
+      definition: >
+        any(mortgage repayment tx)
+      why_useful: >
+        Strong life-stage indicator → high insurance likelihood.
+
+  insurance_context_features:
+
+    - name: prior_insurance_flag
+      status: new
+      data_type: float32
+      description: >
+        1 if customer already has any active insurance policy.
+      definition: >
+        exists(active policy before current date)
+      why_useful: >
+        Customers with prior policies are more likely to buy again.
+
+    - name: avg_premium_paid
+      status: new
+      data_type: float32
+      description: >
+        Average premium amount paid historically.
+      definition: >
+        mean(premium_amount for customer)
+      why_useful: >
+        Helps model pricing sensitivity and affordability.
+
+    - name: policy_count
+      status: new
+      data_type: int
+      description: >
+        Total number of policies owned by the customer.
+      definition: >
+        count(policies per customer)
+      why_useful: >
+        Captures insurance maturity level of the customer.
+
+  pre_purchase_behavior_30d:
+
+    - name: pp_30d_tx_count
+      status: new
+      data_type: int
+      description: >
+        Total number of transactions in the 30 days immediately before policy_start_date.
+      definition: >
+        count(transactions where transaction_date in [policy_start_date-30, policy_start_date))
+      why_useful: >
+        Captures how financially active the customer is leading up to purchase.
+
+    - name: pp_30d_total_spend
+      status: new
+      data_type: float32
+      description: >
+        Total debit/standing-order outflows in the 30 days before policy_start_date.
+      definition: >
+        sum(amount for Debit/Standing Order/Cash Withdrawal/Transfer out in 30d pre-purchase window)
+      why_useful: >
+        High pre-purchase spending can indicate large life events or financial stress.
+
+    - name: pp_30d_total_income
+      status: new
+      data_type: float32
+      description: >
+        Total inflows (e.g., salary, refunds) in the 30 days before policy_start_date.
+      definition: >
+        sum(amount for Credit in 30d pre-purchase window)
+      why_useful: >
+        Reflects earning power immediately before purchase.
+
+    - name: pp_30d_net_cashflow
+      status: new
+      data_type: float32
+      description: >
+        Net cashflow (income - spend) in the 30 days before policy_start_date.
+      definition: >
+        pp_30d_total_income - pp_30d_total_spend
+      why_useful: >
+        Positive net cashflow suggests capacity to afford an insurance product.
+
+    - name: pp_30d_avg_tx_amount
+      status: new
+      data_type: float32
+      description: >
+        Average transaction amount in the 30 days before policy_start_date.
+      definition: >
+        pp_30d_total_spend / max(pp_30d_tx_count, 1)
+      why_useful: >
+        Differentiates customers making frequent low-value vs infrequent high-value purchases.
+
+    - name: pp_30d_high_value_tx_ratio
+      status: new
+      data_type: float32
+      description: >
+        Share of transactions in the top decile of amount within the 30d window.
+      definition: >
+        count(tx with amount >= 90th percentile in 30d window) / max(pp_30d_tx_count, 1)
+      why_useful: >
+        Signals large financial decisions directly before buying insurance.
+
+    - name: pp_30d_salary_tx_count
+      status: new
+      data_type: int
+      description: >
+        Number of salary-like credits detected in the 30 days before policy_start_date.
+      definition: >
+        count(Credit tx where merchant_name == 'Employer' or merchant_category == 'Salary')
+      why_useful: >
+        Indicates how many pay cycles fall inside the decision window.
+
+    - name: pp_30d_days_since_salary
+      status: new
+      data_type: int
+      description: >
+        Days between the last detected salary credit and policy_start_date.
+      definition: >
+        policy_start_date - last(transaction_date where salary_detected_flag == 1)
+      why_useful: >
+        Captures whether purchase happens just after salary (impulsive) or later in the cycle (planned).
+
+    - name: pp_30d_spend_to_income_ratio
+      status: new
+      data_type: float32
+      description: >
+        Ratio of total spend to total income in the 30 days before policy_start_date.
+      definition: >
+        pp_30d_total_spend / max(pp_30d_total_income, epsilon)
+      why_useful: >
+        High ratio suggests tight budgets; low ratio suggests spare capacity to buy protection products.
+
+    - name: pp_30d_discretionary_spend_ratio
+      status: new
+      data_type: float32
+      description: >
+        Fraction of spend on discretionary categories (Entertainment, Travel, Subscriptions, Dining) in the 30 days before purchase.
+      definition: >
+        discretionary_spend_30d / max(pp_30d_total_spend, epsilon)
+      why_useful: >
+        Higher discretionary share indicates lifestyle and disposable income, relevant for upsell/cross-sell.
+
+    - name: pp_30d_essential_spend_ratio
+      status: new
+      data_type: float32
+      description: >
+        Fraction of spend on essential categories (Groceries, Utilities, Healthcare) in the 30 days before purchase.
+      definition: >
+        essential_spend_30d / max(pp_30d_total_spend, epsilon)
+      why_useful: >
+        Higher essential share indicates more constrained budgets and risk-avoidant behavior.
+
+    - name: pp_30d_healthcare_spend_ratio
+      status: new
+      data_type: float32
+      description: >
+        Share of total spend in healthcare-related merchants in 30 days pre-purchase.
+      definition: >
+        sum(amount where merchant_category in ['Healthcare']) / max(pp_30d_total_spend, epsilon)
+      why_useful: >
+        Health-related spending often precedes demand for protection products like life or critical illness.
+
+    - name: pp_30d_mortgage_loan_spend_ratio
+      status: new
+      data_type: float32
+      description: >
+        Share of spend going to mortgage and loan repayment merchants in the 30 days before purchase.
+      definition: >
+        sum(amount where merchant_category in ['Mortgage Repayment','Loan Repayment']) / max(pp_30d_total_spend, epsilon)
+      why_useful: >
+        Captures existing financial commitments which influence protection needs.
+
+    - name: pp_30d_subscription_spend_ratio
+      status: new
+      data_type: float32
+      description: >
+        Share of spend on recurring subscription merchants (e.g. Netflix, Spotify) in 30 days pre-purchase.
+      definition: >
+        sum(amount where merchant_category == 'Subscriptions') / max(pp_30d_total_spend, epsilon)
+      why_useful: >
+        Indicates comfort with recurring payments which is aligned with insurance premium behavior.
+
+    - name: pp_30d_tx_active_days
+      status: new
+      data_type: int
+      description: >
+        Number of distinct days with any transaction in the 30 days before purchase.
+      definition: >
+        count(distinct date(transaction_date) where transaction_date in window)
+      why_useful: >
+        Measures engagement intensity with the account.
+
+    - name: pp_30d_no_spend_streak_max
+      status: new
+      data_type: int
+      description: >
+        Maximum number of consecutive days without any debit transaction in the 30 days before purchase.
+      definition: >
+        max_gap_between_days_with_debit_30d
+      why_useful: >
+        Highlights highly lumpy or irregular spending behavior before the decision.
+
+    - name: pp_30d_spend_volatility
+      status: new
+      data_type: float32
+      description: >
+        Standard deviation of daily spend over the 30 days before purchase.
+      definition: >
+        std(daily_spend over 30d pre-purchase)
+      why_useful: >
+        High volatility suggests unstable behavior and potential life events.
+
+    - name: pp_30d_weekend_spend_ratio
+      status: new
+      data_type: float32
+      description: >
+        Share of spend that occurs on weekend days in the 30 days before purchase.
+      definition: >
+        weekend_spend_30d / max(pp_30d_total_spend, epsilon)
+      why_useful: >
+        Reflects lifestyle (weekday- vs weekend-centric spending) before purchase.
+
+  pre_purchase_behavior_90d:
+
+    - name: pp_90d_tx_count
+      status: new
+      data_type: int
+      description: >
+        Total number of transactions in the 90 days immediately before policy_start_date.
+      definition: >
+        count(transactions where transaction_date in [policy_start_date-90, policy_start_date))
+      why_useful: >
+        Captures longer-term engagement and account usage leading into the decision window.
+
+    - name: pp_90d_total_spend
+      status: new
+      data_type: float32
+      description: >
+        Total debit/standing-order outflows in the 90 days before policy_start_date.
+      definition: >
+        sum(amount for Debit/Standing Order/Cash Withdrawal/Transfer out in 90d pre-purchase window)
+      why_useful: >
+        Provides a broader view of spending obligations and lifestyle.
+
+    - name: pp_90d_total_income
+      status: new
+      data_type: float32
+      description: >
+        Total inflows (e.g., salary, refunds) in the 90 days before policy_start_date.
+      definition: >
+        sum(amount for Credit in 90d pre-purchase window)
+      why_useful: >
+        Measures medium-horizon earning capacity before the decision.
+
+    - name: pp_90d_net_cashflow
+      status: new
+      data_type: float32
+      description: >
+        Net cashflow (income - spend) in the 90 days before policy_start_date.
+      definition: >
+        pp_90d_total_income - pp_90d_total_spend
+      why_useful: >
+        Long-horizon surplus/deficit is strongly related to affordability.
+
+    - name: pp_90d_spend_to_income_ratio
+      status: new
+      data_type: float32
+      description: >
+        Ratio of total spend to total income in the 90 days before policy_start_date.
+      definition: >
+        pp_90d_total_spend / max(pp_90d_total_income, epsilon)
+      why_useful: >
+        Normalized measure of overall financial pressure.
+
+    - name: pp_90d_healthcare_spend_ratio
+      status: new
+      data_type: float32
+      description: >
+        Share of total spend in healthcare-related merchants in 90 days pre-purchase.
+      definition: >
+        sum(amount where merchant_category == 'Healthcare') / max(pp_90d_total_spend, epsilon)
+      why_useful: >
+        Prolonged health-related spending can indicate increased demand for insurance.
+
+    - name: pp_90d_mortgage_loan_spend_ratio
+      status: new
+      data_type: float32
+      description: >
+        Share of spend going to mortgage and loan repayments in the 90 days before purchase.
+      definition: >
+        sum(amount where merchant_category in ['Mortgage Repayment','Loan Repayment']) / max(pp_90d_total_spend, epsilon)
+      why_useful: >
+        Stable, recurring commitments indicate need for income protection and life cover.
+
+    - name: pp_90d_subscription_spend_ratio
+      status: new
+      data_type: float32
+      description: >
+        Share of spend on subscription merchants over the 90-day pre-purchase window.
+      definition: >
+        sum(amount where merchant_category == 'Subscriptions') / max(pp_90d_total_spend, epsilon)
+      why_useful: >
+        Captures long-term comfort with recurring payments.
+
+    - name: pp_90d_tx_active_days
+      status: new
+      data_type: int
+      description: >
+        Number of distinct days with any transaction in the 90 days before purchase.
+      definition: >
+        count(distinct date(transaction_date) where transaction_date in 90d pre-purchase window)
+      why_useful: >
+        Long-horizon engagement intensity; complements 30d view.
+
+    - name: pp_90d_spend_volatility
+      status: new
+      data_type: float32
+      description: >
+        Standard deviation of daily spend over the 90 days before purchase.
+      definition: >
+        std(daily_spend over 90d pre-purchase)
+      why_useful: >
+        Detects gradual or persistent instability rather than short spikes.
+
+  pre_purchase_trend_comparisons:
+
+    - name: pp_7d_vs_30d_spend_change
+      status: new
+      data_type: float32
+      description: >
+        Relative change in spend in last 7 days vs 30-day average before purchase.
+      definition: >
+        (spend_last_7d - spend_last_30d/30*7) / max(spend_last_30d, epsilon)
+      why_useful: >
+        Measures short-term acceleration or deceleration in spending behavior.
+
+    - name: pp_7d_vs_30d_tx_count_change
+      status: new
+      data_type: float32
+      description: >
+        Relative change in transaction count in last 7 days vs 30-day average.
+      definition: >
+        (tx_count_last_7d - pp_30d_tx_count/30*7) / max(pp_30d_tx_count, 1)
+      why_useful: >
+        Captures bursts of activity immediately before purchase.
+
+    - name: pp_30d_vs_90d_spend_change
+      status: new
+      data_type: float32
+      description: >
+        Relative change in average daily spend between 30-day and 90-day windows.
+      definition: >
+        (pp_30d_total_spend/30 - pp_90d_total_spend/90) / max(pp_90d_total_spend/90, epsilon)
+      why_useful: >
+        Indicates whether the customer is ramping up or cutting down expenses as purchase approaches.
+
+    - name: pp_30d_vs_90d_income_change
+      status: new
+      data_type: float32
+      description: >
+        Relative change in average daily income between 30-day and 90-day windows.
+      definition: >
+        (pp_30d_total_income/30 - pp_90d_total_income/90) / max(pp_90d_total_income/90, epsilon)
+      why_useful: >
+        Detects salary changes or bonuses close to purchase.
+
+  product_alignment_signals:
+
+    - name: pp_product_type_is_protection
+      status: new
+      data_type: float32
+      description: >
+        1 if the policy product_type is a pure protection product (e.g., Term Life, Critical Illness).
+      definition: >
+        1 if product_type in ['Term Life','Critical Illness'] else 0
+      why_useful: >
+        Allows the model to differentiate drivers of pure protection vs savings/investment products.
+
+    - name: pp_coverage_to_income_ratio
+      status: new
+      data_type: float32
+      description: >
+        Ratio of coverage_amount to current_income at purchase.
+      definition: >
+        coverage_amount / max(current_income, epsilon)
+      why_useful: >
+        Indicates how aggressively the customer is insuring relative to earnings.
+
+    - name: pp_premium_to_income_ratio
+      status: new
+      data_type: float32
+      description: >
+        Ratio of periodic premium_amount to current_income.
+      definition: >
+        premium_amount * frequency_to_annual_factor(premium_frequency) / max(current_income, epsilon)
+      why_useful: >
+        Captures affordability of the chosen product.
+
+    - name: pp_beneficiary_child_flag
+      status: new
+      data_type: float32
+      description: >
+        1 if any beneficiary is a Child.
+      definition: >
+        1 if beneficiary_relation == 'Child' else 0
+      why_useful: >
+        Indicates family responsibilities which strongly correlate with protection needs.
+
+    - name: pp_beneficiary_spouse_flag
+      status: new
+      data_type: float32
+      description: >
+        1 if any beneficiary is a Spouse.
+      definition: >
+        1 if beneficiary_relation == 'Spouse' else 0
+      why_useful: >
+        Another proxy for family status and dependency structure.
+
+    - name: pp_beneficiary_count_bucket
+      status: new
+      data_type: string
+      description: >
+        Bucketed number of beneficiaries (e.g., 0,1,2,3+).
+      definition: >
+        bucketize(beneficiary_count, bins=[0,1,2,3+])
+      why_useful: >
+        Captures the scale of dependents in a coarse but robust way.
+
+  multi_policy_and_history:
+
+    - name: pp_existing_policy_count
+      status: new
+      data_type: int
+      description: >
+        Number of existing active policies for the customer before the current policy_start_date.
+      definition: >
+        count(policies where policy_status == 'Active' and policy_start_date < current policy_start_date)
+      why_useful: >
+        Distinguishes first-time buyers from repeat buyers.
+
+    - name: pp_time_since_first_policy
+      status: new
+      data_type: float32
+      description: >
+        Time in years between the customer's first-ever policy_start_date and the current policy_start_date.
+      definition: >
+        (current_policy_start_date - first_policy_start_date) in years
+      why_useful: >
+        Captures maturity of the relationship with the insurer.
+
+    - name: pp_time_since_account_open
+      status: new
+      data_type: float32
+      description: >
+        Time in years between account_open_date and policy_start_date.
+      definition: >
+        (policy_start_date - account_open_date) in years
+      why_useful: >
+        Long-tenure customers may have different behavior patterns and risk profiles.
+
+    - name: pp_prior_lapsed_policy_flag
+      status: new
+      data_type: float32
+      description: >
+        1 if the customer has any prior policy with status Lapsed before the current policy_start_date.
+      definition: >
+        1 if exists(policy_status == 'Lapsed' with policy_start_date < current policy_start_date) else 0
+      why_useful: >
+        Reflects historical disengagement or payment issues with insurance.
+
+    - name: pp_policy_count_same_type
+      status: new
+      data_type: int
+      description: >
+        Number of existing policies of the same product_type as the current one.
+      definition: >
+        count(policies where product_type == current_product_type and policy_start_date < current policy_start_date)
+      why_useful: >
+        Indicator of product stacking/upgrading behavior.

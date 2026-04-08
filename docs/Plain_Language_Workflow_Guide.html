@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cloud Propensity Pipeline — Plain-Language Workflow Guide</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --text: #1a1a1a;
+      --muted: #555;
+      --border: #ddd;
+      --bg-note: #f7f9fc;
+      --accent: #1a73e8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: Georgia, "Times New Roman", serif;
+      line-height: 1.55;
+      color: var(--text);
+      max-width: 42rem;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 4rem;
+      font-size: 11pt;
+    }
+    h1 {
+      font-family: system-ui, Segoe UI, sans-serif;
+      font-size: 1.75rem;
+      line-height: 1.25;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 0.5rem;
+    }
+    h2 {
+      font-family: system-ui, Segoe UI, sans-serif;
+      font-size: 1.25rem;
+      margin-top: 2rem;
+      color: #111;
+    }
+    h3 {
+      font-family: system-ui, Segoe UI, sans-serif;
+      font-size: 1.05rem;
+      margin-top: 1.25rem;
+    }
+    p { margin: 0.75rem 0; }
+    ul, ol { margin: 0.5rem 0 0.75rem 1.25rem; }
+    li { margin: 0.35rem 0; }
+    .lead { font-size: 1.05rem; color: var(--muted); }
+    .callout {
+      background: var(--bg-note);
+      border-left: 4px solid var(--accent);
+      padding: 0.75rem 1rem;
+      margin: 1rem 0;
+    }
+    .callout strong { display: block; margin-bottom: 0.35rem; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.95rem;
+      margin: 1rem 0;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.5rem 0.65rem;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #f0f0f0; font-family: system-ui, sans-serif; font-size: 0.85rem; }
+    code, .mono { font-family: Consolas, "Courier New", monospace; font-size: 0.9em; }
+    .diagram {
+      margin: 1.5rem 0;
+      padding: 1rem;
+      background: #fafafa;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+    .mermaid { text-align: center; }
+    .footer-note {
+      margin-top: 3rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+    @media print {
+      body { max-width: 100%; padding: 0; font-size: 10pt; }
+      .no-print { display: none !important; }
+      .diagram { break-inside: avoid; background: #fff; border: 1px solid #ccc; }
+      a[href]::after { content: ""; }
+    }
+  </style>
+</head>
+<body>
+
+  <p class="no-print callout" style="border-left-color: #34a853;">
+    <strong>How to save this as a PDF</strong>
+    Open this file in <strong>Google Chrome</strong> or <strong>Microsoft Edge</strong>. Press <span class="mono">Ctrl+P</span> (Windows) or <span class="mono">Cmd+P</span> (Mac). Choose <strong>Save as PDF</strong> as the printer, then save. Wait a moment first so the diagrams finish drawing.
+  </p>
+
+  <h1>Cloud Propensity Pipeline<br /><span style="font-weight:normal;font-size:1rem;color:#555;">Plain-language guide for everyone</span></h1>
+
+  <p class="lead">
+    This document explains—in everyday language—what the project does, how data moves through Google Cloud, and how running it on Vertex AI fits together. No programming background required.
+  </p>
+
+  <h2>1. What problem does this solve?</h2>
+  <p>
+    Imagine you have customer, insurance, and transaction information stored as spreadsheet-style files in the cloud. You want to <strong>clean that data</strong>, <strong>build useful “features”</strong> (patterns and summaries that help predict behavior), and <strong>store those features in a database</strong> (BigQuery) so analysts or machine-learning tools can use them later.
+  </p>
+  <p>
+    This project is an <strong>automated assembly line</strong> for that: it reads the files, processes them, and loads the results into BigQuery. Optionally, it can also pull short <strong>history windows</strong> (for example, 30 days before a key date) for specific customers.
+  </p>
+
+  <h2>2. The cast of characters (what each piece is)</h2>
+  <p>Think of Google Cloud as a set of specialized services. Here is who does what:</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Simple analogy</th>
+        <th>Role in this project</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Google Cloud Storage (GCS)</strong></td>
+        <td>A giant, reliable filing cabinet in the cloud</td>
+        <td>Holds your <strong>input CSV files</strong> (customers, insurance, transactions). One bucket might be named like <span class="mono">propensitysyntheticdata</span>.</td>
+      </tr>
+      <tr>
+        <td><strong>BigQuery</strong></td>
+        <td>A very fast warehouse for huge tables</td>
+        <td>Stores the <strong>output feature tables</strong> (for example daily features and policy events) so you can query them with SQL.</td>
+      </tr>
+      <tr>
+        <td><strong>Artifact Registry</strong></td>
+        <td>A private “app library” for packaged software images</td>
+        <td>Stores the <strong>Docker image</strong>—a frozen copy of your code and its dependencies—that Vertex runs.</td>
+      </tr>
+      <tr>
+        <td><strong>Vertex AI (Custom Job)</strong></td>
+        <td>A button that says “run this packaged job on Google’s computers”</td>
+        <td>Starts a machine, pulls your image, runs your pipeline script, then shuts down when done.</td>
+      </tr>
+      <tr>
+        <td><strong>Cloud Build</strong> (optional)</td>
+        <td>A factory that builds the package for you</td>
+        <td>Can build the Docker image in the cloud and upload it to Artifact Registry—useful if you do not use Docker on your laptop.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>3. Big picture: where does everything live?</h2>
+  <div class="diagram">
+    <pre class="mermaid">
+flowchart TB
+  subgraph you [Your laptop or office]
+    A[You]
+    B[Configuration file .env]
+    C[Submit script optional]
+  end
+  subgraph gcp [Google Cloud]
+    D[(Cloud Storage bucket\nraw CSV files)]
+    E[Artifact Registry\nDocker image]
+    F[Vertex AI Custom Job\nmanaged computer]
+    G[(BigQuery\ntables)]
+  end
+  A --> B
+  A --> C
+  C -->|Creates job| F
+  F -->|Reads CSVs| D
+  F -->|Pulls software package| E
+  F -->|Writes features| G
+    </pre>
+  </div>
+  <p>
+    <strong>Important:</strong> Your <strong>data</strong> stays in the bucket you chose for CSVs. The <strong>recipe</strong> for running the pipeline is the Docker image in Artifact Registry. Vertex is simply the <strong>kitchen</strong> that follows the recipe.
+  </p>
+
+  <h2>4. The journey of your data (step by step)</h2>
+  <p>When the pipeline runs—locally or on Vertex—the story is the same on the inside:</p>
+  <ol>
+    <li><strong>Load</strong> three CSV files from Cloud Storage (customers, insurance, transactions).</li>
+    <li><strong>Clean</strong> and prepare the data (fix types, strip noise, align columns).</li>
+    <li><strong>Build features</strong>—new tables that summarize behavior the way your project defines it.</li>
+    <li><strong>Load into BigQuery</strong> so the results are queryable. Usually the job <em>replaces</em> the data in existing tables without deleting the whole table (safer for cloud permissions).</li>
+    <li>For the “full demo” script only: <strong>sample a few customers</strong>, then optionally build a <strong>30-day sequence</strong> table using SQL against the features already in BigQuery.</li>
+  </ol>
+
+  <div class="diagram">
+    <pre class="mermaid">
+flowchart LR
+  subgraph inputs [Inputs]
+    CSV1[customers CSV]
+    CSV2[insurance CSV]
+    CSV3[transactions CSV]
+  end
+  subgraph steps [Pipeline steps]
+    P1[Read from GCS]
+    P2[Preprocess]
+    P3[Feature engineering]
+    P4[Publish to BigQuery]
+  end
+  subgraph outputs [Outputs]
+    BQ1[(daily_features)]
+    BQ2[(policy_events)]
+    BQ3[(sequences optional)]
+  end
+  CSV1 --> P1
+  CSV2 --> P1
+  CSV3 --> P1
+  P1 --> P2 --> P3 --> P4
+  P4 --> BQ1
+  P4 --> BQ2
+  BQ1 --> BQ3
+    </pre>
+  </div>
+
+  <h2>5. What is Docker, and why do we use it?</h2>
+  <p>
+    <strong>Docker image</strong> = a single, portable box that contains <strong>your code</strong>, the <strong>Python libraries</strong> it needs, and a <strong>fixed command</strong> to run (like “start the pipeline”). That way, Vertex always runs the <strong>same environment</strong>, no matter what is installed on your personal computer.
+  </p>
+  <p>
+    The <strong>Dockerfile</strong> in the project is the <strong>blueprint</strong> for that box. Cloud Build (or Docker on your machine) <strong>builds</strong> the box and <strong>pushes</strong> it to Artifact Registry.
+  </p>
+
+  <div class="diagram">
+    <pre class="mermaid">
+flowchart TD
+  A[Dockerfile + source code] --> B[Build process\nCloud Build or local Docker]
+  B --> C[Image stored in\nArtifact Registry]
+  C --> D[Vertex pulls image\nwhen job starts]
+  D --> E[Container runs\npython pipeline]
+    </pre>
+  </div>
+
+  <h2>6. Artifact Registry in more detail</h2>
+  <ul>
+    <li><strong>Where is the image?</strong> In your Google Cloud project, in a <strong>region</strong> (for example <span class="mono">us-central1</span>), inside a <strong>repository</strong> (for example <span class="mono">cloud-propensity</span>).</li>
+    <li><strong>What is the “address”?</strong> A URI like <span class="mono">us-central1-docker.pkg.dev/PROJECT/REPO/IMAGE:tag</span>. That string is what Vertex uses to find the image.</li>
+    <li><strong>Who can download it?</strong> Google’s systems use <strong>service accounts</strong> (robot users). Vertex’s worker must have permission to <strong>read</strong> from Artifact Registry—usually straightforward when the image and job are in the same project.</li>
+  </ul>
+
+  <h2>7. Why two different buckets sometimes?</h2>
+  <p>
+    You might use one bucket for <strong>your CSV data</strong> (for example <span class="mono">propensitysyntheticdata</span>). Vertex AI also needs a <strong>staging</strong> place for its own job metadata and outputs tied to the <strong>Custom Job API</strong>. That staging bucket must sit in the <strong>same regional location</strong> as the Vertex region (for example <span class="mono">us-central1</span>). Many “data” buckets are multi-region <strong>US</strong>, which does <em>not</em> match a regional Vertex job—so a <strong>second</strong>, regional bucket is used only for Vertex staging. <strong>Your CSVs are still read from the original data bucket.</strong>
+  </p>
+
+  <div class="diagram">
+    <pre class="mermaid">
+flowchart TB
+  subgraph bucketA [Data bucket example]
+    A1[propensitysyntheticdata]
+    A2[Your CSV files live here]
+  end
+  subgraph bucketB [Vertex staging bucket example]
+    B1[project-...-vertex-ai-staging]
+    B2[Vertex job bookkeeping\nnot your source CSVs]
+  end
+  subgraph job [Vertex Custom Job]
+    J[Worker reads CSVs from A1]
+    J --> B2
+  end
+  A1 --- A2
+  B1 --- B2
+    </pre>
+  </div>
+
+  <h2>8. Running locally vs running on Vertex</h2>
+  <table>
+    <thead>
+      <tr>
+        <th></th>
+        <th>Local (your computer)</th>
+        <th>Vertex AI Custom Job</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Who runs the code?</strong></td>
+        <td>Your machine</td>
+        <td>Google-managed machine in the cloud</td>
+      </tr>
+      <tr>
+        <td><strong>How do you start it?</strong></td>
+        <td>Command like <span class="mono">python -m src.pipelines.build_features_pipeline</span></td>
+        <td>Command that <em>submits</em> a job; Vertex runs the container entrypoint</td>
+      </tr>
+      <tr>
+        <td><strong>Configuration</strong></td>
+        <td><span class="mono">.env</span> file on disk</td>
+        <td>Submit script passes key settings as <strong>environment variables</strong> into the container (project ID, bucket names, BigQuery names, etc.)</td>
+      </tr>
+      <tr>
+        <td><strong>Best for</strong></td>
+        <td>Quick tests, debugging</td>
+        <td>Repeatable production runs, large jobs, no laptop required</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>9. Why Custom Job and not “training pipeline”?</h2>
+  <p>
+    Vertex AI offers several patterns. <strong>Custom Job</strong> means: “run my containerized script on demand.” It is ideal for <strong>data pipelines</strong>, batch scoring, ETL, and feature generation—exactly what this repo does.
+  </p>
+  <p>
+    A <strong>training pipeline</strong> (and model-focused workflows) is optimized when the main output is a <strong>trained model artifact</strong> with experiment tracking. This project’s main output is <strong>tables in BigQuery</strong>, not a packaged model, so Custom Job is the natural fit. Later, if you split work into many steps and want a visual graph, retries, and lineage, you could adopt <strong>Vertex AI Pipelines</strong>—that is optional orchestration on top, not a requirement for correctness.
+  </p>
+
+  <h2>10. Configuration file (<span class="mono">.env</span>) in plain English</h2>
+  <p>
+    The <span class="mono">.env</span> file is a small list of settings the programs read at startup. Your <span class="mono">.env.example</span> shows the template; you copy it to <span class="mono">.env</span> and fill in real values. Typical entries:
+  </p>
+  <table>
+    <thead>
+      <tr>
+        <th>Setting (concept)</th>
+        <th>What it means</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Project ID</td>
+        <td>Which Google Cloud <strong>project</strong> owns BigQuery tables and billing.</td>
+      </tr>
+      <tr>
+        <td>Region</td>
+        <td>Where Vertex runs (for example <span class="mono">us-central1</span>).</td>
+      </tr>
+      <tr>
+        <td>GCS bucket / prefix</td>
+        <td>Where the <strong>input CSVs</strong> live.</td>
+      </tr>
+      <tr>
+        <td>BigQuery dataset and table names</td>
+        <td>Where <strong>outputs</strong> are written.</td>
+      </tr>
+      <tr>
+        <td>Vertex image URI</td>
+        <td>The Artifact Registry <strong>address</strong> of your Docker image.</td>
+      </tr>
+      <tr>
+        <td>Staging bucket (optional)</td>
+        <td>Regional bucket for Vertex job staging; defaults to a project-specific name if unset.</td>
+      </tr>
+      <tr>
+        <td>Recreate BigQuery tables (optional)</td>
+        <td>On Vertex, usually <strong>off</strong> so the service account does not need permission to delete tables; data can still be replaced using “truncate” style loads.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>11. End-to-end workflow (Vertex path)</h2>
+  <div class="diagram">
+    <pre class="mermaid">
+sequenceDiagram
+  participant Dev as You
+  participant CB as Cloud Build
+  participant AR as Artifact Registry
+  participant V as Vertex AI
+  participant GCS as Cloud Storage data bucket
+  participant BQ as BigQuery
+
+  Dev->>CB: Upload source and build image
+  CB->>AR: Push Docker image
+  Dev->>V: Submit Custom Job with image URI and env vars
+  V->>AR: Pull image
+  V->>GCS: Read CSV files
+  V->>BQ: Create or update feature tables
+  Note over V,BQ: Pipeline script finishes exit 0 or error logs
+    </pre>
+  </div>
+
+  <h2>12. If something goes wrong (plain-language hints)</h2>
+  <ul>
+    <li><strong>“Permission denied” on BigQuery</strong> — The identity running the job needs roles to run queries and load data (and sometimes create datasets). A cloud admin assigns this in IAM.</li>
+    <li><strong>“Permission denied” on Cloud Storage</strong> — The job identity needs read access to the bucket that holds CSVs.</li>
+    <li><strong>“Wrong project” in errors</strong> — The container must receive the correct <strong>project ID</strong> via environment variables; the submit script is set up to inject them.</li>
+    <li><strong>Staging bucket region mismatch</strong> — Vertex needs a staging bucket in the <strong>same region</strong> as the job, not a multi-region “US” bucket.</li>
+    <li><strong>Cannot delete BigQuery tables</strong> — Cloud runs often disable “drop and recreate”; loads still refresh data using safer modes.</li>
+  </ul>
+
+  <h2>13. Glossary</h2>
+  <dl>
+    <dt><strong>Bucket</strong></dt>
+    <dd>A container in Cloud Storage that holds files and folders (prefixes).</dd>
+    <dt><strong>Dataset (BigQuery)</strong></dt>
+    <dd>A folder-like grouping of tables inside a project.</dd>
+    <dt><strong>Service account</strong></dt>
+    <dd>A special non-human user robots use to call Google APIs securely.</dd>
+    <dt><strong>Custom Job</strong></dt>
+    <dd>Vertex runs your container once (or replicas) to completion—good for batch pipelines.</dd>
+    <dt><strong>URI</strong></dt>
+    <dd>A standardized string that identifies a resource, like <span class="mono">gs://...</span> or <span class="mono">...docker.pkg.dev/...</span>.</dd>
+  </dl>
+
+  <div class="footer-note">
+    <p><strong>Document purpose:</strong> Non-technical overview of the Cloud Propensity Pipeline and its Google Cloud workflow. Technical filenames and commands are shown only as reference; your team’s exact values live in <span class="mono">.env</span> and the Google Cloud console.</p>
+    <p>Generated for the <em>cloud-propensity-pipeline</em> repository. To export as PDF, use Print → Save as PDF from Chrome or Edge after opening this HTML file.</p>
+  </div>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: "neutral",
+      flowchart: { curve: "basis", padding: 12 },
+      securityLevel: "loose"
+    });
+  </script>
+</body>
+</html>

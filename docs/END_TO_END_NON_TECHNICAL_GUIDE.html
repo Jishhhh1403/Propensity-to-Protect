@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cloud Propensity Pipeline - End-to-End Non-Technical Guide</title>
+  <style>
+    :root {
+      --text: #1b1f24;
+      --muted: #555;
+      --border: #d0d7de;
+      --bg-soft: #f6f8fa;
+      --accent: #1a73e8;
+      --ok: #1e8e3e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: Georgia, "Times New Roman", serif;
+      line-height: 1.6;
+      color: var(--text);
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 24px;
+      font-size: 11pt;
+    }
+    h1, h2, h3 {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      line-height: 1.25;
+      margin-top: 1.25em;
+    }
+    h1 { font-size: 1.9rem; border-bottom: 2px solid var(--border); padding-bottom: 10px; }
+    h2 { font-size: 1.3rem; }
+    h3 { font-size: 1.05rem; }
+    p { margin: 0.6em 0; }
+    ul, ol { margin: 0.45em 0 0.75em 1.2em; }
+    li { margin: 0.3em 0; }
+    .lead { color: var(--muted); font-size: 1.04rem; }
+    .callout {
+      background: var(--bg-soft);
+      border-left: 4px solid var(--accent);
+      padding: 12px 14px;
+      margin: 14px 0;
+    }
+    .ok { border-left-color: var(--ok); }
+    code, .mono {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.92em;
+      background: #f2f4f7;
+      padding: 1px 4px;
+      border-radius: 4px;
+    }
+    pre {
+      background: #0d1117;
+      color: #e6edf3;
+      padding: 12px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 0.9rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0;
+      font-size: 0.95rem;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 8px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #f0f3f6; font-family: system-ui, sans-serif; font-size: 0.86rem; }
+    .section {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 14px;
+      margin: 16px 0;
+      background: #fff;
+    }
+    .footer {
+      margin-top: 28px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+    @media print {
+      body { max-width: 100%; padding: 0; font-size: 10pt; }
+      .no-print { display: none !important; }
+      .section { break-inside: avoid; }
+      a[href]::after { content: ""; }
+    }
+  </style>
+</head>
+<body>
+  <!-- <div class="callout ok no-print">
+    <strong>How to save as PDF</strong><br />
+    Open this file in Chrome/Edge, press <span class="mono">Ctrl+P</span>, choose <strong>Save as PDF</strong>, then save.
+  </div> -->
+
+  <h1>Cloud Propensity Pipeline<br /><span style="font-size:1rem;font-weight:normal;color:#666;">End-to-end guide in plain language</span></h1>
+  <p class="lead">This guide explains the full workflow like you are new to engineering. Follow the steps exactly in order.</p>
+
+  <div class="section">
+    <h2>1) What this system does</h2>
+    <p>Think of this like a factory:</p>
+    <ol>
+      <li>It reads raw files from cloud storage (GCS).</li>
+      <li>It cleans and organizes the data.</li>
+      <li>It creates useful behavior features.</li>
+      <li>It stores results in BigQuery tables.</li>
+      <li>It can build 30-day "before purchase" sequences for policy events.</li>
+      <li>It can train a GRU model and write model outputs back to BigQuery.</li>
+    </ol>
+  </div>
+
+  <div class="section">
+    <h2>2) Main output tables</h2>
+    <table>
+      <thead><tr><th>Table</th><th>What it contains</th></tr></thead>
+      <tbody>
+        <tr><td><code>daily_features</code></td><td>One row per customer per day with engineered features.</td></tr>
+        <tr><td><code>policy_events</code></td><td>Policy event rows (purchase date, policy details, risk fields).</td></tr>
+        <tr><td><code>policy_2024_2025_30_day_sequences</code></td><td>30-day windows before policy purchase dates.</td></tr>
+        <tr><td><code>policy_propensity_gru_embeddings</code></td><td>GRU model outputs: embeddings and probabilities.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>3) One-time setup</h2>
+    <h3>A. Create environment</h3>
+    <pre>cd "C:\Users\jishn\Development\cloud-propensity-pipeline"
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt</pre>
+
+    <h3>B. Configure <code>.env</code></h3>
+    <p>Copy <code>.env.example</code> to <code>.env</code> and set at least:</p>
+    <ul>
+      <li><code>GCP_PROJECT_ID</code></li>
+      <li><code>GCS_BUCKET</code>, <code>GCS_PREFIX</code></li>
+      <li><code>BQ_DATASET</code> and table names</li>
+      <li><code>VERTEX_IMAGE_URI</code> (for Vertex runs)</li>
+    </ul>
+
+    <h3>C. Google login (ADC)</h3>
+    <pre>gcloud auth application-default login
+gcloud auth application-default set-quota-project &lt;YOUR_PROJECT_ID&gt;</pre>
+  </div>
+
+  <div class="section">
+    <h2>4) Run options (pick one)</h2>
+
+    <h3>Option 1: Fast local test</h3>
+    <pre>.\.venv\Scripts\python.exe -m src.pipelines.run_all_pipeline</pre>
+    <p>Good for quick sanity checks (small sampled set).</p>
+
+    <h3>Option 2: Main local pipeline for 2024/2025</h3>
+    <pre>.\.venv\Scripts\python.exe -m src.pipelines.run_policy_2024_2025_sequences_pipeline</pre>
+    <p>This is the main feature + sequence build path.</p>
+
+    <h3>Option 3: Train GRU model</h3>
+    <pre>.\.venv\Scripts\python.exe -m src.pipelines.run_gru_propensity_pipeline</pre>
+    <p>Run this after sequence table is available.</p>
+  </div>
+
+  <div class="section">
+    <h2>5) Vertex AI run (managed cloud execution)</h2>
+    <h3>Step 1: Build and push Docker image</h3>
+    <pre>gcloud auth configure-docker us-central1-docker.pkg.dev
+docker build -t us-central1-docker.pkg.dev/&lt;PROJECT_ID&gt;/&lt;REPO&gt;/cloud-propensity:latest .
+docker push us-central1-docker.pkg.dev/&lt;PROJECT_ID&gt;/&lt;REPO&gt;/cloud-propensity:latest</pre>
+
+    <h3>Step 2: Put image URI in <code>.env</code></h3>
+    <p>Set <code>VERTEX_IMAGE_URI</code> to the pushed image path.</p>
+
+    <h3>Step 3: Submit Vertex job</h3>
+    <pre>.\.venv\Scripts\python.exe -m src.pipelines.run_on_vertex_custom_job --display-name cloud-propensity-policy-2024-2025</pre>
+
+    <h3>Run GRU pipeline on Vertex</h3>
+    <pre>.\.venv\Scripts\python.exe -m src.pipelines.run_on_vertex_custom_job --pipeline gru_propensity --display-name cloud-propensity-gru</pre>
+  </div>
+
+  <div class="section">
+    <h2>6) Important safety settings</h2>
+    <ul>
+      <li><code>PIPELINE_RECREATE_BQ_TABLES=true</code>: drops/recreates tables before load (strong reset behavior).</li>
+      <li><code>PIPELINE_RECREATE_BQ_TABLES=false</code>: safer when runtime account cannot delete tables (common on Vertex).</li>
+      <li><code>VERTEX_STAGING_BUCKET</code> must be in same region as <code>GCP_REGION</code>.</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>7) Troubleshooting (simple checklist)</h2>
+    <ol>
+      <li>Are you using venv? Prompt should show <code>(.venv)</code> or use <code>.\.venv\Scripts\python.exe</code>.</li>
+      <li>Is <code>GCP_PROJECT_ID</code> set?</li>
+      <li>Did ADC login complete?</li>
+      <li>Are the 3 CSV files present in GCS path?</li>
+      <li>Does your account/service account have BigQuery + GCS permissions?</li>
+      <li>If Vertex fails, open Vertex logs and use the first real stack trace line.</li>
+    </ol>
+
+    <h3>Common error meanings</h3>
+    <ul>
+      <li><strong>No module named google.cloud</strong> - you ran outside venv.</li>
+      <li><strong>Table with field based partitioning must have a schema</strong> - table create/load schema mismatch.</li>
+      <li><strong>No 30-day sequences found</strong> - no data in the 30-day pre-purchase window.</li>
+      <li><strong>Vertex worker exited non-zero</strong> - cloud container failed; check Vertex logs URL for exact cause.</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>8) Quick command cheat sheet</h2>
+    <pre># activate venv
+.\.venv\Scripts\Activate.ps1
+
+# local quick test
+.\.venv\Scripts\python.exe -m src.pipelines.run_all_pipeline
+
+# local main 2024/2025 run
+.\.venv\Scripts\python.exe -m src.pipelines.run_policy_2024_2025_sequences_pipeline
+
+# GRU training
+.\.venv\Scripts\python.exe -m src.pipelines.run_gru_propensity_pipeline
+
+# submit Vertex default pipeline
+.\.venv\Scripts\python.exe -m src.pipelines.run_on_vertex_custom_job
+
+# submit Vertex GRU pipeline
+.\.venv\Scripts\python.exe -m src.pipelines.run_on_vertex_custom_job --pipeline gru_propensity</pre>
+  </div>
+
+  <div class="footer">
+    <p><strong>Purpose:</strong> A non-technical, printable run guide for this repository. Keep this file for onboarding and PDF sharing.</p>
+  </div>
+</body>
+</html>
+
