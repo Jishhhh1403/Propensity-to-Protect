@@ -106,6 +106,14 @@ This pipeline:
 
 `python -m src.pipelines.run_gru_propensity_pipeline`
 
+**Output table (BigQuery):** rows include `embedding_vector`, `probability_vector`, and `class_names_json`.
+
+- **Embedding (propensity vector):** dense GRU head (`embedding_dim`, default 64). It does not depend on how many insurance products you have; it summarizes the 30-day sequence behavior before the event.
+- **Probability vector:** softmax over **all labels present in the training batch**, including sampled non-buyers labeled `__NO_PURCHASE__`. With the current catalog (Term Life and Whole Life only), you typically see **three** classes when negatives are included: `Term Life`, `Whole Life`, and `__NO_PURCHASE__`. The order is **lexicographic** (see `class_names_json`); element `probability_vector[i]` is the probability of `class_names_json[i]`.
+- **Stable product labels:** `product_name` / `product_type` from `insurance_data.csv` are normalized to `Term Life` and `Whole Life` so minor spelling or spacing differences do not split one product into duplicate classes.
+
+After changing source data in GCS, re-run the sequence export pipeline, then GRU training, so BigQuery tables and softmax outputs match the new catalog.
+
 ### 5) Sampled full local run (quick smoke)
 
 `python -m src.pipelines.run_all_pipeline`

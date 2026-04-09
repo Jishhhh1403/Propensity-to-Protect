@@ -2,9 +2,32 @@
 
 from __future__ import annotations
 
+import re
 from typing import Iterable
 
 import pandas as pd
+
+
+def canonical_policy_label(value: object) -> str | None:
+    """Map raw insurance product strings to stable labels used for GRU training and BigQuery export.
+
+    The current synthetic/product catalog uses only **Term Life** and **Whole Life**. Minor variants
+    (casing, spacing, ``term_life``) are collapsed so softmax class indices and ``probability_vector``
+    stay aligned with ``class_names_json``.
+
+    Unknown values are returned unchanged (after strip) so future product lines still work.
+    """
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    s = str(value).strip()
+    if not s or s.lower() in ("nan", "none", "<na>"):
+        return None
+    key = re.sub(r"[\s_]+", " ", s.lower())
+    if "whole" in key and "life" in key:
+        return "Whole Life"
+    if "term" in key and "life" in key:
+        return "Term Life"
+    return s
 
 
 def resolve_policy_name(row: pd.Series) -> str | None:
@@ -22,7 +45,7 @@ def resolve_policy_name(row: pd.Series) -> str | None:
         s = str(val).strip()
         if not s or s.lower() in ("nan", "none", "<na>"):
             continue
-        return s
+        return canonical_policy_label(s)
     return None
 
 

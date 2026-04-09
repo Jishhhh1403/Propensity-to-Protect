@@ -11,8 +11,10 @@ policy metadata columns added by the policy sequences pipeline:
 - ``feature_date`` (DATE)
 - feature columns (mostly numeric)
 
-The training objective is multi-class (softmax) over policy types (``policy_name``).
-The exported "behavior/propensity vector" is the GRU final hidden state for each policy event.
+The training objective is multi-class (softmax) over policy types (``policy_name``), plus optional
+``__NO_PURCHASE__`` rows for sampled non-buyers. With only Term Life / Whole Life in source data,
+``probability_vector`` length is usually three when negatives are used; see ``class_names_json``.
+The exported "behavior/propensity vector" is the GRU embedding head output for each event (fixed dim).
 """
 
 from __future__ import annotations
@@ -27,6 +29,8 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 from google.cloud import bigquery
+
+from src.components.policy_years_filter import canonical_policy_label
 
 _NO_PURCHASE_POLICY_NAME = "__NO_PURCHASE__"
 
@@ -49,7 +53,10 @@ def _utc_now_ts() -> str:
 
 
 def _policy_name_to_class_id(policy_names: Iterable[str]) -> dict[str, int]:
-    # Deterministic class index mapping is critical so probabilities remain interpretable across runs.
+    """Deterministic class index mapping so ``probability_vector`` aligns with ``class_names_json``.
+
+    Lexicographic sort keeps order stable (e.g. Term Life, Whole Life, __NO_PURCHASE__).
+    """
     uniq = sorted({str(p).strip() for p in policy_names if str(p).strip()})
     return {name: i for i, name in enumerate(uniq)}
 
@@ -113,7 +120,20 @@ def load_sequences_from_bigquery(
         df["customer_key"] = pd.to_numeric(df["customer_key"], errors="coerce").astype("Int64")
     if "customer_id" in df.columns:
         df["customer_id"] = df["customer_id"].astype(str)
-    df["policy_name"] = df["policy_name"].astype(str)
+
+    def _normalize_loaded_policy_name(raw: object) -> str:
+        if raw is None or (isinstance(raw, float) and pd.isna(raw)):
+            return ""
+        s = str(raw).strip()
+        if not s or s.lower() in ("nan", "none", "<na>"):
+            return ""
+        if s == _NO_PURCHASE_POLICY_NAME:
+            return s
+        c = canonical_policy_label(s)
+        return c if c is not None else s
+
+    df["policy_name"] = df["policy_name"].map(_normalize_loaded_policy_name)
+    df = df[df["policy_name"].astype(str).str.len() > 0]
     return df
 
 

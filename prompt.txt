@@ -1,0 +1,295 @@
+You are a senior ML + Data Engineering architect. Build a complete, production-style Python project named `cloud-propensity-pipeline` that reproduces an end-to-end insurance propensity system on Google Cloud.
+
+Goal:
+- Ingest raw CSV source data from GCS.
+- Preprocess and normalize customer IDs.
+- Build daily behavioral features and policy event tables.
+- Publish features to BigQuery.
+- Build 30-day pre-purchase sequences for policy events in years 2024 and 2025.
+- Train a GRU multi-class model to predict policy type.
+- Export both:
+  1) `embedding_vector` = fixed-length propensity vector
+  2) `probability_vector` = softmax probabilities over class labels
+- Support local run and Vertex AI Custom Job run.
+
+========================
+1) TECH STACK + STANDARDS
+========================
+- Python 3.11
+- pandas, numpy, google-cloud-bigquery, google-cloud-aiplatform, google-auth, gcsfs, pyarrow, tensorflow-cpu
+- Project layout:
+  - `src/components/`
+  - `src/pipelines/`
+  - `sql/`
+  - `docs/`
+  - root files: `README.md`, `requirements.txt`, `.env.example`, `Dockerfile`, `features.yaml`
+- Use typed function signatures where practical.
+- Use clear docstrings.
+- Make deterministic mappings for class labels.
+- Keep table schemas stable and BigQuery-friendly.
+- Avoid hidden magic; make config explicit from env.
+
+========================
+2) CONFIG + ENV DESIGN
+========================
+Create `src/components/config.py` with:
+- dataclass `PipelineConfig` containing:
+  - `gcp_project_id`, `gcs_bucket`, `gcs_prefix`, `bq_dataset`
+  - `bq_daily_features_table`, `bq_policy_events_table`
+  - `bq_policy_sequences_table`, `bq_propensity_embeddings_table`
+  - `gcp_region`, `vertex_pipeline_root`, `vertex_service_account`
+  - `vertex_staging_bucket`, `vertex_image_uri`
+  - `model_artifacts_gcs_prefix`
+- computed properties for full table FQNs:
+  - `daily_features_table_fqn`
+  - `policy_events_table_fqn`
+  - `policy_sequences_table_fqn`
+  - `propensity_embeddings_table_fqn`
+- load `.env` from repo root only when env vars are missing.
+- resolve `GCP_PROJECT_ID` from env first; fallback to ADC project.
+- default model artifact prefix to `gs://<bucket>/vertex/model-artifacts` if not set.
+
+Create `.env.example` with:
+- `GCP_PROJECT_ID=`
+- `GCP_REGION=us-central1`
+- `GOOGLE_APPLICATION_CREDENTIALS=`
+- `GCS_BUCKET=propensitysyntheticdata`
+- `GCS_PREFIX=`
+- `PIPELINE_RECREATE_BQ_TABLES=true`
+- `BQ_DATASET=insurance_features`
+- `BQ_DAILY_FEATURES_TABLE=daily_features`
+- `BQ_POLICY_EVENTS_TABLE=policy_events`
+- `BQ_POLICY_SEQUENCES_TABLE=policy_2024_2025_30_day_sequences`
+- `BQ_PROPENSITY_EMBEDDINGS_TABLE=policy_propensity_gru_embeddings`
+- `MODEL_ARTIFACTS_GCS_PREFIX=`
+- `VERTEX_IMAGE_URI=`
+- `VERTEX_SERVICE_ACCOUNT=`
+- `VERTEX_STAGING_BUCKET=`
+- `VERTEX_PIPELINE_ROOT=`
+
+========================
+3) INGEST + PREPROCESS
+========================
+Create `src/components/ingest_from_gcs.py`:
+- Read:
+  - `customers_data.csv`
+  - `insurance_data.csv`
+  - `transactions_data.csv`
+  from `gs://bucket[/prefix]`.
+- Force ID-like columns to string on read.
+- Return dict with keys: `customers`, `insurance`, `transactions`.
+
+Create `src/components/preprocess.py`:
+- Normalize `customer_id` to canonical digits-only string:
+  - `CUST_000605` -> `605`
+  - `000605` -> `605`
+- Add nullable integer `customer_key` from trailing digits of `customer_id`.
+- Parse dates robustly:
+  - customers: `account_open_date`
+  - insurance: `launch_date`, `policy_start_date`
+  - transactions: `transaction_date`
+- Parse numerics safely and coerce errors.
+- Standardize text trimming and missing handling.
+- Return preprocessed frames dict.
+
+========================
+4) FEATURE ENGINEERING
+========================
+Create `src/components/feature_engineering.py` to output:
+A) `daily_features` table
+B) `policy_events` table
+
+Daily feature logic:
+- Aggregate transactions per (`customer_key`,`customer_id`,`date`):
+  - `daily_income` (credits)
+  - `daily_spend` (non-credits)
+  - `tx_count`
+  - category flags:
+    - `cat_flag_health`
+    - `cat_flag_retail`
+  - `channel_digital_pct`
+  - `is_weekend`
+- Expand to dense daily calendar per customer between min/max transaction date.
+- Fill no-transaction days with zeros.
+- Add time-series derived features:
+  - `net_flow`, `daily_balance`, `rel_spend`, `bal_trajectory`
+  - `velocity_ratio`, `spend_z_score`
+  - cyclical: `day_sin`, `day_cos`
+- Join static customer features:
+  - `age`, `income_band`, `credit_score`, `current_income`, `city`
+
+Policy events logic:
+- From insurance, map:
+  - `event_date` <- `launch_date`
+  - `purchase_date` <- `policy_start_date`
+- Include:
+  `customer_key, policy_id, customer_id, event_date, purchase_date, product_id, product_name, product_type, premium_amount, coverage_amount, policy_status, risk_category`
+
+========================
+5) BIGQUERY PUBLISHING
+========================
+Create `src/components/publish_to_bigquery.py`:
+- Ensure dataset exists.
+- Define stable schemas for both tables.
+- Align DataFrames to schema (add missing columns as nullable).
+- Create partitioned/clustering tables if missing:
+  - `daily_features`: partition by `date`, cluster by `customer_id`
+  - `policy_events`: partition by `event_date`, cluster by `customer_id`
+- Support:
+  - `write_disposition` (default `WRITE_TRUNCATE`)
+  - optional `recreate_tables` to delete+recreate
+
+========================
+6) POLICY LABEL NORMALIZATION + YEAR FILTER
+========================
+Create `src/components/policy_years_filter.py`:
+- `canonical_policy_label(value)`:
+  - normalize life product variants into stable labels:
+    - `Term Life`
+    - `Whole Life`
+- `resolve_policy_name(row)`:
+  - prefer `product_name`, fallback `product_type`
+- `eligible_customer_ids_policies_only_in_years(insurance, transactions, years=(2024,2025))`
+- `policy_rows_for_sequence_export(...)`:
+  - return insurance rows for eligible customers and allowed years.
+
+========================
+7) SEQUENCE RETRIEVAL
+========================
+Create `src/components/sequence_retrieval.py`:
+- `fetch_30_day_sequence(config, as_of_date, customer_id=None, customer_key=None)`
+- Pull from `daily_features` for window:
+  - `date BETWEEN as_of_date-30 AND as_of_date-1`
+- Return selected feature columns + metadata:
+  - `customer_key`, `customer_id`, `as_of_date`, `feature_date`, `day_offset`
+  - all numeric feature fields used by GRU.
+
+========================
+8) GRU TRAINING + PROPENSITY EXPORT
+========================
+Create `src/components/gru_propensity.py` with:
+- `GRUTrainingParams` dataclass defaults:
+  - embedding_dim=64, gru_units=64, dense_units=64
+  - dropout=0.1, batch_size=16, epochs=30, lr=1e-3, val_fraction=0.2
+- Load positive sequences from BigQuery table where `policy_name` is not null.
+- Optionally sample non-buyers from `daily_features` not in `policy_events`:
+  - label negatives as `__NO_PURCHASE__`
+  - enforce strict 30-day windows only.
+- Build tensors:
+  - X shape `(N,30,F)`, y class ids
+  - deterministic lexicographic class mapping
+- Standardize features with train mean/std.
+- Build model:
+  - GRU -> Dense(tanh embedding head) -> Dense(relu) -> Softmax
+- Train with early stopping.
+- Score all events to produce:
+  - `embedding_vector` (fixed size = propensity vector)
+  - `probability_vector` (class probabilities)
+- Save model + artifacts (`feature_cols`, class mapping, scaler stats) to GCS.
+- Write BigQuery output table with schema:
+  - `customer_key`, `customer_id`, `policy_start_date`, `policy_name`, `policy_id`
+  - `run_id`, `model_version`, `created_at`
+  - `class_names_json` (ordered list aligned with probability indices)
+  - `embedding_vector` (FLOAT repeated)
+  - `probability_vector` (FLOAT repeated)
+- Partition output by `policy_start_date`, cluster by `customer_id`,`policy_name`.
+
+========================
+9) PIPELINE ENTRYPOINTS
+========================
+Create these pipeline modules:
+
+1) `src/pipelines/build_features_pipeline.py`
+- Ingest -> preprocess -> feature engineer -> publish features.
+
+2) `src/pipelines/get_sequence_pipeline.py`
+- CLI to fetch one customer 30-day sequence:
+  - args: `--customer-id`, `--as-of-date`
+
+3) `src/pipelines/run_policy_2024_2025_sequences_pipeline.py`
+- Ingest/preprocess all data
+- Identify customers with policy_start_date in 2024/2025 and transactions
+- Build/publish daily_features + filtered policy_events
+- For each policy event, fetch 30-day sequence and attach `policy_name`
+- Save to `BQ_POLICY_SEQUENCES_TABLE`.
+
+4) `src/pipelines/run_gru_propensity_pipeline.py`
+- Train GRU using sequence table
+- Export embeddings + probabilities table.
+
+5) `src/pipelines/run_all_pipeline.py`
+- Small sampled smoke path (buyers + nonbuyers) and sequence generation.
+
+6) `src/pipelines/run_on_vertex_custom_job.py`
+- Submit selected module to Vertex custom job with env propagation.
+- Supported pipeline options:
+  - `policy_2024_2025`
+  - `run_all`
+  - `build_features`
+  - `gru_propensity`
+
+========================
+10) CONTAINER + DOCS
+========================
+Create `Dockerfile`:
+- base `python:3.11-slim`
+- install requirements
+- copy `src/` and `sql/`
+- default ENTRYPOINT:
+  `python -m src.pipelines.run_policy_2024_2025_sequences_pipeline`
+
+Create `requirements.txt` with exact libs listed earlier.
+
+Create `README.md` with:
+- project overview
+- prerequisites
+- env setup
+- local run order:
+  1. build_features
+  2. run_policy_2024_2025_sequences
+  3. run_gru_propensity
+- explain outputs:
+  - `embedding_vector` = propensity vector
+  - `probability_vector` + `class_names_json` alignment
+- vertex run instructions.
+
+Create `features.yaml` documenting existing and candidate features for sequence modeling.
+
+========================
+11) ACCEPTANCE TESTS / VALIDATION
+========================
+After generating code, provide commands and validation checks:
+
+Commands:
+- `python -m src.pipelines.build_features_pipeline`
+- `python -m src.pipelines.run_policy_2024_2025_sequences_pipeline`
+- `python -m src.pipelines.run_gru_propensity_pipeline`
+
+BigQuery checks:
+- daily features row counts > 0
+- policy events only in years 2024/2025
+- sequence table windows have exactly 30 rows per (customer_key, policy_start_date)
+- embeddings table has:
+  - non-null `embedding_vector`
+  - non-null `probability_vector`
+  - consistent vector length
+  - class order explained by `class_names_json`
+- probabilities approximately sum to 1 for each row.
+
+========================
+12) OUTPUT FORMAT FOR YOUR RESPONSE
+========================
+Return:
+1) Full file tree.
+2) Full code for every file.
+3) A “Runbook” section with exact commands.
+4) A “Troubleshooting” section (permissions, empty windows, missing project id, Vertex staging bucket region mismatch).
+5) A “How propensity vector is computed” explanation:
+   - embedding head output from GRU, fixed dimension (default 64).
+6) A “How probability vector is computed” explanation:
+   - softmax over sorted class labels (including `__NO_PURCHASE__` when negatives are sampled).
+
+Important:
+- Keep behavior deterministic where possible.
+- Ensure `probability_vector[i]` maps to `class_names_json[i]`.
+- Do not skip any files.
